@@ -12,7 +12,7 @@ export function CrowdEntries() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
-  const [totalRecords, setTotalRecords] = useState(0);
+  const [, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const navigate = useNavigate();
 
@@ -226,18 +226,14 @@ export function CrowdEntries() {
                     entries
                       .filter((entry) => entry && typeof entry === "object")
                       .map((entry, index) => {
-                        // Handle both old and new API formats
-                        const personName =
-                          entry?.personName || entry?.visitorName || "Unknown";
+                        // Handle API format
+                        const personName = entry?.personName || "Unknown";
                         const gender = entry?.gender || "other";
-                        const entryTime =
-                          entry?.entryLocal || entry?.entryTime || "";
+                        const entryTime = entry?.entryLocal || "";
                         const entryUtc = entry?.entryUtc || null;
-                        const exitTime =
-                          entry?.exitLocal || entry?.exitTime || null;
+                        const exitTime = entry?.exitLocal || null;
                         const exitUtc = entry?.exitUtc || null;
-                        const dwellTime =
-                          entry?.dwellMinutes || entry?.dwellTime || null;
+                        const dwellTime = entry?.dwellMinutes || null;
                         const hasExited = exitTime || exitUtc;
 
                         return (

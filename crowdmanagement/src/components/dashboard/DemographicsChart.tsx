@@ -5,8 +5,6 @@ import {
   ResponsiveContainer,
   Legend,
   Tooltip,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,

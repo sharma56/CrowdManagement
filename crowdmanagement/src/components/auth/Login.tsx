@@ -19,7 +19,7 @@ export function Login() {
 
     try {
       console.log("Login: Attempting login...");
-      const loginResponse = await authService.login({ email, password });
+      await authService.login({ email, password });
       console.log("Login: Login successful, navigating to dashboard");
 
       // Small delay to ensure token is stored

@@ -7,7 +7,6 @@ import { authService } from "../../services/auth.service";
 import type {
   SocketLiveOccupancyEvent,
   SocketAlertEvent,
-  OccupancyBucket,
   AnalyticsDemographicsResponse,
 } from "../../types/api";
 import { SummaryCards } from "./SummaryCards";
@@ -17,7 +16,7 @@ import { AlertNotification } from "./AlertNotification";
 import "./Dashboard.css";
 
 export function Dashboard() {
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [liveOccupancy, setLiveOccupancy] = useState<number | null>(null);
   const [todayFootfall, setTodayFootfall] = useState<number | null>(null);
   const [avgDwellTime, setAvgDwellTime] = useState<number | null>(null);
