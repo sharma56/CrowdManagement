@@ -1,0 +1,11 @@
+/*.js
+  Content-Type: application/javascript; charset=utf-8
+
+/*.mjs
+  Content-Type: application/javascript; charset=utf-8
+
+/*.jsx
+  Content-Type: application/javascript; charset=utf-8
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
