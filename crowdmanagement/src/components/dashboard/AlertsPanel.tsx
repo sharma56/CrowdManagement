@@ -12,19 +12,7 @@ interface AlertsPanelProps {
 }
 
 export function AlertsPanel({ alerts, isOpen, onClose }: AlertsPanelProps) {
-  const [unreadCount, setUnreadCount] = useState(0);
   const [sitesCache, setSitesCache] = useState<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    // Count unread alerts (alerts from last 5 minutes)
-    const fiveMinutesAgo = moment().subtract(5, "minutes");
-    const unread = alerts.filter((alert) => {
-      if (!alert.timestamp) return false;
-      const alertTime = moment(alert.timestamp);
-      return alertTime.isAfter(fiveMinutesAgo);
-    });
-    setUnreadCount(unread.length);
-  }, [alerts]);
 
   // Fetch sites when panel opens
   useEffect(() => {
@@ -184,7 +172,6 @@ export function AlertsPanel({ alerts, isOpen, onClose }: AlertsPanelProps) {
           ) : (
             <div className="alerts-list">
               {alerts.map((alert, index) => {
-                const zoneName = alert.zone?.name || "Unknown Zone";
                 const siteName = getSiteName(alert);
                 const securityLevel = alert.zone?.securityLevel || "LOW";
                 const location = `${siteName} ${securityLevel} Zone · ${siteName}`;

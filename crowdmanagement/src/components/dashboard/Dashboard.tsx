@@ -34,7 +34,7 @@ export function Dashboard() {
   const [allAlerts, setAllAlerts] = useState<SocketAlertEvent[]>([]);
   const [showAlertsPanel, setShowAlertsPanel] = useState(false);
   const showAlertsPanelRef = useRef(false);
-  const location = useLocation();
+  const location = useLocation(); 
   const { collapsed } = location.state || {};
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     collapsed ?? false

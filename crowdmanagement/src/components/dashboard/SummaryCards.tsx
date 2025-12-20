@@ -9,17 +9,6 @@ export function SummaryCards({
   todayFootfall,
   avgDwellTime,
 }: SummaryCardsProps) {
-  const formatDwellTime = (minutes: number | null): string => {
-    if (minutes === null) return "N/A";
-    const totalSeconds = Math.round(minutes * 60);
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${String(mins).padStart(2, "0")}min ${String(secs).padStart(
-      2,
-      "0"
-    )}sec`;
-  };
-
   // Mock trend data - in real app, this would come from API comparing with yesterday
   // For now, we'll show positive trends as examples
   const getTrend = (
