@@ -41,7 +41,7 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle auth errors
+// Add response interceptor to handle auth errors and provide better error messages
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -49,6 +49,23 @@ apiClient.interceptors.response.use(
       authService.logout();
       window.location.href = '/login';
     }
+    
+    // Provide better error messages for common issues
+    if (error.response?.status === 502) {
+      console.error('502 Bad Gateway Error:', {
+        message: 'The backend server is not responding or the gateway cannot reach it.',
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+        suggestions: [
+          '1. Check if the backend server is running',
+          '2. Verify the API URL in .env file (VITE_API_BASE_URL)',
+          '3. Check backend server logs for errors',
+          '4. Ensure the backend is accessible at the configured URL',
+          '5. If using a proxy/gateway, check its configuration'
+        ]
+      });
+    }
+    
     return Promise.reject(error);
   }
 );

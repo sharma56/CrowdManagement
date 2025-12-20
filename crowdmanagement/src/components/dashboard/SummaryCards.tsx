@@ -48,18 +48,22 @@ export function SummaryCards({
     const isUp = trend.direction === "up";
     return (
       <div className={`trend-indicator ${isUp ? "trend-up" : "trend-down"}`}>
-        <span className="trend-arrow">{isUp ? "↗" : "↘"}</span>
+        <span className="trend-arrow"></span>
         <span className="trend-text">
-          {trend.percentage}% {isUp ? "More" : "Less"} than yesterday
+          {trend.percentage}% {isUp ? "more" : "less"} than yesterday
         </span>
       </div>
     );
   };
 
+  const formatDwellTimeDisplay = (minutes: number | null): string => {
+    if (minutes === null) return "N/A";
+    return `${minutes.toFixed(2)} min`;
+  };
+
   return (
     <div className="summary-cards">
       <div className="summary-card">
-        <div className="card-icon">👥</div>
         <div className="card-content">
           <h3>Live Occupancy</h3>
           <p className="card-value">
@@ -70,7 +74,6 @@ export function SummaryCards({
       </div>
 
       <div className="summary-card">
-        <div className="card-icon">🚶</div>
         <div className="card-content">
           <h3>Today's Footfall</h3>
           <p className="card-value">
@@ -81,10 +84,9 @@ export function SummaryCards({
       </div>
 
       <div className="summary-card">
-        <div className="card-icon">⏱️</div>
         <div className="card-content">
           <h3>Avg Dwell Time</h3>
-          <p className="card-value">{formatDwellTime(avgDwellTime)}</p>
+          <p className="card-value">{formatDwellTimeDisplay(avgDwellTime)}</p>
           <TrendIndicator trend={getTrend(avgDwellTime)} />
         </div>
       </div>

@@ -1,9 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Login } from './components/auth/Login';
-import { Dashboard } from './components/dashboard/Dashboard';
-import { CrowdEntries } from './components/entries/CrowdEntries';
-import { AuthGuard } from './guards/AuthGuard';
-import { authService } from './services/auth.service';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Login } from "./components/auth/Login";
+import { Dashboard } from "./components/dashboard/Dashboard";
+import { CrowdEntries } from "./components/entries/CrowdEntries";
+import { AuthGuard } from "./guards/AuthGuard";
+import { authService } from "./services/auth.service";
 
 function App() {
   return (
@@ -11,7 +11,13 @@ function App() {
       <Routes>
         <Route
           path="/login"
-          element={authService.isAuthenticated() ? <Navigate to="/dashboard" replace /> : <Login />}
+          element={
+            authService.isAuthenticated() ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Login />
+            )
+          }
         />
         <Route
           path="/dashboard"
@@ -29,8 +35,26 @@ function App() {
             </AuthGuard>
           }
         />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route
+          path="/"
+          element={
+            authService.isAuthenticated() ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="*"
+          element={
+            authService.isAuthenticated() ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

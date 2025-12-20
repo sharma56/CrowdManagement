@@ -94,7 +94,7 @@ export function DemographicsChart({ data }: DemographicsChartProps) {
     <div className="demographics-container">
       {/* Left Panel: Donut Chart */}
       <div className="demographics-panel">
-        <h3 className="demographics-panel-title">Chart of Demographics</h3>
+        <h3 className="demographics-panel-title">Charts of Demographics</h3>
         <div className="donut-chart-wrapper">
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>

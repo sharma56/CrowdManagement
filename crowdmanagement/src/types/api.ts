@@ -143,6 +143,7 @@ export interface SocketAlertEvent {
   zone: {
     id: string;
     name: string;
+    securityLevel?: string;
   };
   site: {
     id: string;
@@ -151,6 +152,8 @@ export interface SocketAlertEvent {
   severity: 'low' | 'medium' | 'high' | 'critical';
   timestamp: string;
   message?: string;
+  personName?: string;
+  personId?: string;
 }
 
 export interface SocketLiveOccupancyEvent {

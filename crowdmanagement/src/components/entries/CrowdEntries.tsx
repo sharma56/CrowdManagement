@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import moment from "moment";
 import { analyticsService } from "../../services/analytics.service";
 import { authService } from "../../services/auth.service";
+import { socketService } from "../../services/socket.service";
 import type { CrowdEntry } from "../../types/api";
 import { format } from "date-fns";
+import { Sidebar } from "../dashboard/Sidebar";
+import { TopHeader } from "../dashboard/TopHeader";
 import "./CrowdEntries.css";
 
 export function CrowdEntries() {
@@ -14,7 +17,17 @@ export function CrowdEntries() {
   const [pageSize] = useState(10);
   const [, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { collapsed } = location.state || {};
+
+  // Initialize sidebar state from navigation state if available
+  useEffect(() => {
+    if (collapsed !== undefined) {
+      setIsSidebarCollapsed(collapsed);
+    }
+  }, [collapsed]);
 
   const loadEntries = useCallback(async () => {
     try {
@@ -181,149 +194,181 @@ export function CrowdEntries() {
   };
 
   const handleLogout = () => {
+    // Disconnect socket before logout
+    socketService.disconnect();
     authService.logout();
-    navigate("/login");
+    navigate("/login", { replace: true });
   };
 
   return (
-    <div className="entries-container">
-      <header className="entries-header">
-        <h1>Crowd Entries</h1>
-        <div className="header-actions">
-          <button onClick={() => navigate("/dashboard")} className="nav-button">
-            Dashboard
-          </button>
-          <button onClick={handleLogout} className="logout-button">
-            Logout
-          </button>
-        </div>
-      </header>
+    <div
+      className={`entries-layout ${
+        isSidebarCollapsed ? "sidebar-collapsed" : ""
+      }`}
+    >
+      <Sidebar
+        onLogout={handleLogout}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+      />
+      <div
+        className={
+          isSidebarCollapsed ? "entries-containercoll" : "entries-container"
+        }
+      >
+        <TopHeader />
+        <div className="entries-content">
+          <div className="entries-title-section">
+            <h1 className="entries-main-title">Crowd Entries</h1>
+            <button className="today-button-content">Today</button>
+          </div>
 
-      <div className="entries-content">
-        {loading ? (
-          <div className="loading">Loading entries...</div>
-        ) : (
-          <>
-            <div className="table-container">
-              <table className="entries-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Sex</th>
-                    <th>Entry</th>
-                    <th>Exit</th>
-                    <th>Dwell Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.length === 0 ? (
+          {loading ? (
+            <div className="loading">Loading entries...</div>
+          ) : (
+            <>
+              <div className="table-container">
+                <table className="entries-table">
+                  <thead>
                     <tr>
-                      <td colSpan={5} className="no-data">
-                        No entries found
-                      </td>
+                      <th>Name</th>
+                      <th>Sex</th>
+                      <th>Entry</th>
+                      <th>Exit</th>
+                      <th>Dwell Time</th>
                     </tr>
-                  ) : (
-                    entries
-                      .filter((entry) => entry && typeof entry === "object")
-                      .map((entry, index) => {
-                        // Handle API format
-                        const personName = entry?.personName || "Unknown";
-                        const gender = entry?.gender || "other";
-                        const entryTime = entry?.entryLocal || "";
-                        const entryUtc = entry?.entryUtc || null;
-                        const exitTime = entry?.exitLocal || null;
-                        const exitUtc = entry?.exitUtc || null;
-                        const dwellTime = entry?.dwellMinutes || null;
-                        const hasExited = exitTime || exitUtc;
+                  </thead>
+                  <tbody>
+                    {entries.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="no-data">
+                          No entries found
+                        </td>
+                      </tr>
+                    ) : (
+                      entries
+                        .filter((entry) => entry && typeof entry === "object")
+                        .map((entry, index) => {
+                          // Handle API format
+                          const personName = entry?.personName || "Unknown";
+                          const gender = entry?.gender || "other";
+                          const entryTime = entry?.entryLocal || "";
+                          const entryUtc = entry?.entryUtc || null;
+                          const exitTime = entry?.exitLocal || null;
+                          const exitUtc = entry?.exitUtc || null;
+                          const dwellTime = entry?.dwellMinutes || null;
+                          const hasExited = exitTime || exitUtc;
 
-                        return (
-                          <tr key={entry?.personId || index}>
-                            <td>
-                              <div className="name-cell">
-                                <div
-                                  className="avatar"
-                                  style={{
-                                    backgroundColor: getAvatarColor(personName),
-                                  }}
-                                >
-                                  {getInitials(personName)}
+                          return (
+                            <tr key={entry?.personId || index}>
+                              <td>
+                                <div className="name-cell">
+                                  <div
+                                    className="avatar"
+                                    style={{
+                                      backgroundColor:
+                                        getAvatarColor(personName),
+                                    }}
+                                  >
+                                    {getInitials(personName)}
+                                  </div>
+                                  <span className="name-text">
+                                    {personName}
+                                  </span>
                                 </div>
-                                <span className="name-text">{personName}</span>
-                              </div>
-                            </td>
-                            <td>
-                              <span className={`gender-badge gender-${gender}`}>
-                                {gender === "male"
-                                  ? "Male"
-                                  : gender === "female"
-                                  ? "Female"
-                                  : "Other"}
-                              </span>
-                            </td>
-                            <td>{formatTime(entryTime, entryUtc)}</td>
-                            <td>
-                              {hasExited ? formatTime(exitTime, exitUtc) : "--"}
-                            </td>
-                            <td>
-                              {hasExited ? formatDwellTime(dwellTime) : "--"}
-                            </td>
-                          </tr>
-                        );
-                      })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {totalPages > 0 && (
-              <div className="pagination">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1 || loading}
-                  className="pagination-arrow"
-                  aria-label="Previous page"
-                >
-                  &lt;
-                </button>
-                <div className="pagination-numbers">
-                  {getPaginationPages().map((pageNum, idx) => {
-                    if (pageNum === "...") {
-                      return (
-                        <span
-                          key={`ellipsis-${idx}`}
-                          className="pagination-ellipsis"
-                        >
-                          ...
-                        </span>
-                      );
-                    }
-                    const pageNumber = pageNum as number;
-                    return (
-                      <button
-                        key={pageNumber}
-                        onClick={() => setPage(pageNumber)}
-                        disabled={loading}
-                        className={`pagination-number ${
-                          page === pageNumber ? "active" : ""
-                        }`}
-                      >
-                        {pageNumber}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages || loading}
-                  className="pagination-arrow"
-                  aria-label="Next page"
-                >
-                  &gt;
-                </button>
+                              </td>
+                              <td>
+                                <span className="gender-text">
+                                  {gender === "male"
+                                    ? "male"
+                                    : gender === "female"
+                                    ? "female"
+                                    : "other"}
+                                </span>
+                              </td>
+                              <td>{formatTime(entryTime, entryUtc)}</td>
+                              <td>
+                                {hasExited
+                                  ? formatTime(exitTime, exitUtc)
+                                  : "--"}
+                              </td>
+                              <td>
+                                {hasExited ? formatDwellTime(dwellTime) : "--"}
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </>
-        )}
+
+              {totalPages > 0 && (
+                <div className="pagination">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1 || loading}
+                    className="pagination-arrow"
+                    aria-label="Previous page"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M15 18L9 12L15 6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <div className="pagination-numbers">
+                    {getPaginationPages().map((pageNum, idx) => {
+                      if (pageNum === "...") {
+                        return (
+                          <span
+                            key={`ellipsis-${idx}`}
+                            className="pagination-ellipsis"
+                          >
+                            ...
+                          </span>
+                        );
+                      }
+                      const pageNumber = pageNum as number;
+                      return (
+                        <button
+                          key={pageNumber}
+                          onClick={() => setPage(pageNumber)}
+                          disabled={loading}
+                          className={`pagination-number ${
+                            page === pageNumber ? "active" : ""
+                          }`}
+                        >
+                          {pageNumber}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages || loading}
+                    className="pagination-arrow"
+                    aria-label="Next page"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M9 18L15 12L9 6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import moment from "moment";
 import { analyticsService } from "../../services/analytics.service";
@@ -12,12 +12,18 @@ import type {
 import { SummaryCards } from "./SummaryCards";
 import { OccupancyChart } from "./OccupancyChart";
 import { DemographicsChart } from "./DemographicsChart";
-import { AlertNotification } from "./AlertNotification";
+import { Sidebar } from "./Sidebar";
+import { TopHeader } from "./TopHeader";
+import { AlertsPanel } from "./AlertsPanel";
+import { useLocation } from "react-router-dom";
 import "./Dashboard.css";
 
 export function Dashboard() {
   const [_loading, setLoading] = useState(true);
   const [liveOccupancy, setLiveOccupancy] = useState<number | null>(null);
+  const [liveOccupancyFromSocket, setLiveOccupancyFromSocket] = useState<
+    number | null
+  >(null);
   const [todayFootfall, setTodayFootfall] = useState<number | null>(null);
   const [avgDwellTime, setAvgDwellTime] = useState<number | null>(null);
   const [occupancyData, setOccupancyData] = useState<
@@ -25,7 +31,14 @@ export function Dashboard() {
   >([]);
   const [demographicsData, setDemographicsData] =
     useState<AnalyticsDemographicsResponse | null>(null);
-  const [alert, setAlert] = useState<SocketAlertEvent | null>(null);
+  const [allAlerts, setAllAlerts] = useState<SocketAlertEvent[]>([]);
+  const [showAlertsPanel, setShowAlertsPanel] = useState(false);
+  const showAlertsPanelRef = useRef(false);
+  const location = useLocation();
+  const { collapsed } = location.state || {};
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    collapsed ?? false
+  );
   const navigate = useNavigate();
 
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +46,7 @@ export function Dashboard() {
 
   // SiteId input state for when siteId is missing (must be before any conditional returns)
   const [siteIdInput, setSiteIdInput] = useState("");
+
   const [showSiteIdInput, setShowSiteIdInput] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
@@ -205,7 +219,28 @@ export function Dashboard() {
         // Safety checks for occupancy data - using buckets structure
         let occupancyValue: number | null = null;
 
+        // First, try to get current occupancy from response (if available)
         if (
+          typeof occupancyResponse?.current === "number" &&
+          !isNaN(occupancyResponse.current) &&
+          occupancyResponse.current >= 0
+        ) {
+          occupancyValue = occupancyResponse.current;
+          console.log(
+            "Dashboard: Using current occupancy from API:",
+            occupancyValue
+          );
+        } else if (
+          typeof occupancyResponse?.occupancy === "number" &&
+          !isNaN(occupancyResponse.occupancy) &&
+          occupancyResponse.occupancy >= 0
+        ) {
+          occupancyValue = occupancyResponse.occupancy;
+          console.log(
+            "Dashboard: Using occupancy field from API:",
+            occupancyValue
+          );
+        } else if (
           Array.isArray(occupancyResponse?.buckets) &&
           occupancyResponse.buckets.length > 0
         ) {
@@ -221,7 +256,7 @@ export function Dashboard() {
           ) {
             occupancyValue = lastBucket.avg;
             console.log(
-              "Dashboard: Extracted occupancy value from API:",
+              "Dashboard: Extracted occupancy value from last bucket:",
               occupancyValue
             );
           }
@@ -231,20 +266,47 @@ export function Dashboard() {
           );
         }
 
-        // Only set if we have a valid value (including 0, but log it)
-        if (occupancyValue !== null) {
+        // Only set from API if we don't have a socket value (socket takes priority for live data)
+        // Also, if API returns 0, wait a bit for socket events before setting it
+        if (occupancyValue !== null && liveOccupancyFromSocket === null) {
           if (occupancyValue === 0) {
             console.warn(
-              "Dashboard: Occupancy is 0 - this might be expected if no one is present, or check if simulation is running"
+              "Dashboard: Occupancy is 0 from API - waiting for socket events for live data"
+            );
+            // Don't set 0 immediately - wait for socket events
+            // Set a timeout to use API value if no socket events come
+            setTimeout(() => {
+              if (liveOccupancyFromSocket === null) {
+                console.log(
+                  "Dashboard: No socket events received, using API value:",
+                  occupancyValue
+                );
+                setLiveOccupancy(occupancyValue);
+              }
+            }, 2000);
+          } else {
+            setLiveOccupancy(occupancyValue);
+            console.log(
+              "Dashboard: Set live occupancy from API (no socket value yet):",
+              occupancyValue
             );
           }
-          setLiveOccupancy(occupancyValue);
+        } else if (
+          occupancyValue !== null &&
+          liveOccupancyFromSocket !== null
+        ) {
+          console.log(
+            "Dashboard: Skipping API occupancy value - using socket value instead:",
+            liveOccupancyFromSocket
+          );
         } else {
           console.warn(
             "Dashboard: Could not extract occupancy value from API response"
           );
-          // Keep previous value or set to null
-          setLiveOccupancy(null);
+          // Don't overwrite socket value with null
+          if (liveOccupancyFromSocket === null && liveOccupancy === null) {
+            setLiveOccupancy(null);
+          }
         }
 
         // Transform buckets to the format expected by OccupancyChart
@@ -337,46 +399,131 @@ export function Dashboard() {
     }, 1000);
 
     const unsubscribeOccupancy = socketService.onLiveOccupancy(
-      (event: SocketLiveOccupancyEvent) => {
+      (event: SocketLiveOccupancyEvent | any) => {
         console.log("Dashboard: Received live occupancy event:", event);
+        console.log("Dashboard: Event type:", typeof event);
+        console.log(
+          "Dashboard: Event keys:",
+          event ? Object.keys(event) : "null"
+        );
+        console.log(
+          "Dashboard: Full event data:",
+          JSON.stringify(event, null, 2)
+        );
+
         // Safety check for event and occupancy value
         if (event && typeof event === "object") {
           // Try multiple possible field names for occupancy
           let occupancyValue: number | null = null;
 
-          if (typeof event.occupancy === "number" && !isNaN(event.occupancy)) {
-            occupancyValue = event.occupancy;
-          } else if (
-            typeof (event as any).count === "number" &&
-            !isNaN((event as any).count)
-          ) {
-            occupancyValue = (event as any).count;
-          } else if (
-            typeof (event as any).current === "number" &&
-            !isNaN((event as any).current)
-          ) {
-            occupancyValue = (event as any).current;
-          } else if (
-            typeof (event as any).value === "number" &&
-            !isNaN((event as any).value)
-          ) {
-            occupancyValue = (event as any).value;
+          // Check if event.occupancy exists and is a valid number (including 0)
+          if (event.occupancy !== undefined && event.occupancy !== null) {
+            const parsed =
+              typeof event.occupancy === "string"
+                ? parseFloat(event.occupancy)
+                : event.occupancy;
+            if (typeof parsed === "number" && !isNaN(parsed) && parsed >= 0) {
+              occupancyValue = parsed;
+              console.log(
+                "Dashboard: Found occupancy in event.occupancy:",
+                occupancyValue
+              );
+            }
           }
 
+          // Try other possible field names
+          if (occupancyValue === null && (event as any).count !== undefined) {
+            const parsed =
+              typeof (event as any).count === "string"
+                ? parseFloat((event as any).count)
+                : (event as any).count;
+            if (typeof parsed === "number" && !isNaN(parsed) && parsed >= 0) {
+              occupancyValue = parsed;
+              console.log(
+                "Dashboard: Found occupancy in event.count:",
+                occupancyValue
+              );
+            }
+          }
+
+          if (occupancyValue === null && (event as any).current !== undefined) {
+            const parsed =
+              typeof (event as any).current === "string"
+                ? parseFloat((event as any).current)
+                : (event as any).current;
+            if (typeof parsed === "number" && !isNaN(parsed) && parsed >= 0) {
+              occupancyValue = parsed;
+              console.log(
+                "Dashboard: Found occupancy in event.current:",
+                occupancyValue
+              );
+            }
+          }
+
+          if (occupancyValue === null && (event as any).value !== undefined) {
+            const parsed =
+              typeof (event as any).value === "string"
+                ? parseFloat((event as any).value)
+                : (event as any).value;
+            if (typeof parsed === "number" && !isNaN(parsed) && parsed >= 0) {
+              occupancyValue = parsed;
+              console.log(
+                "Dashboard: Found occupancy in event.value:",
+                occupancyValue
+              );
+            }
+          }
+
+          // If event is a number directly (some servers send just the number)
+          if (
+            occupancyValue === null &&
+            typeof event === "number" &&
+            !isNaN(event) &&
+            event >= 0
+          ) {
+            occupancyValue = event;
+            console.log(
+              "Dashboard: Event is a number directly:",
+              occupancyValue
+            );
+          }
+
+          // Accept 0 as a valid value (occupancy can be 0)
           if (occupancyValue !== null && occupancyValue >= 0) {
             console.log(
               "Dashboard: Setting live occupancy from socket:",
-              occupancyValue
+              occupancyValue,
+              "(type:",
+              typeof occupancyValue,
+              ")"
             );
+            setLiveOccupancyFromSocket(occupancyValue);
             setLiveOccupancy(occupancyValue);
           } else {
             console.warn(
-              "Dashboard: Invalid occupancy value in socket event:",
-              event
+              "Dashboard: Could not extract valid occupancy value from event:",
+              event,
+              "Extracted value:",
+              occupancyValue
             );
           }
+        } else if (typeof event === "number") {
+          // Handle case where event is just a number
+          if (!isNaN(event) && event >= 0) {
+            console.log(
+              "Dashboard: Event is a number, setting occupancy:",
+              event
+            );
+            setLiveOccupancyFromSocket(event);
+            setLiveOccupancy(event);
+          }
         } else {
-          console.warn("Dashboard: Invalid socket event received:", event);
+          console.warn(
+            "Dashboard: Invalid socket event received:",
+            event,
+            "Type:",
+            typeof event
+          );
         }
       }
     );
@@ -385,9 +532,14 @@ export function Dashboard() {
       (event: SocketAlertEvent) => {
         // Safety check for event
         if (event && typeof event === "object") {
-          setAlert(event);
-          // Auto-dismiss alert after 6 seconds
-          setTimeout(() => setAlert(null), 6000);
+          // Only add to all alerts list if panel is open (live updates only when viewing)
+          if (showAlertsPanelRef.current) {
+            setAllAlerts((prev) => {
+              const updated = [event, ...prev];
+              return updated.slice(0, 100);
+            });
+          }
+          // Don't show popup alert notification - only collect when panel is open
         }
       }
     );
@@ -400,8 +552,10 @@ export function Dashboard() {
   }, []);
 
   const handleLogout = () => {
+    // Disconnect socket before logout
+    socketService.disconnect();
     authService.logout();
-    navigate("/login");
+    navigate("/login", { replace: true });
   };
 
   const handleSetSiteId = () => {
@@ -414,70 +568,70 @@ export function Dashboard() {
 
   if (error && error.includes("Site ID is required")) {
     return (
-      <div className="dashboard-container">
-        <header className="dashboard-header">
-          <h1>Crowd Management Dashboard</h1>
-          <div className="header-actions">
-            <button onClick={handleLogout} className="logout-button">
-              Logout
-            </button>
-          </div>
-        </header>
-        <div className="error-container">
-          <div className="error-message-large">
-            <h2>⚠️ Site ID Required</h2>
-            <p>{error}</p>
-            {!showSiteIdInput ? (
-              <div>
-                <p
-                  style={{ marginTop: "20px", fontSize: "14px", color: "#666" }}
-                >
-                  Please enter your Site ID to continue:
-                </p>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    marginTop: "20px",
-                    alignItems: "center",
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={siteIdInput}
-                    onChange={(e) => setSiteIdInput(e.target.value)}
-                    placeholder="Enter Site ID"
+      <div className="dashboard-layout">
+        <Sidebar onLogout={handleLogout} />
+        <div className="dashboard-container">
+          <TopHeader />
+          <div className="error-container">
+            <div className="error-message-large">
+              <h2>⚠️ Site ID Required</h2>
+              <p>{error}</p>
+              {!showSiteIdInput ? (
+                <div>
+                  <p
                     style={{
-                      padding: "10px",
-                      border: "1px solid #ddd",
-                      borderRadius: "6px",
+                      marginTop: "20px",
                       fontSize: "14px",
-                      flex: 1,
-                      maxWidth: "300px",
+                      color: "#666",
                     }}
-                    onKeyPress={(e) => {
-                      if (e.key === "Enter") {
-                        handleSetSiteId();
-                      }
+                  >
+                    Please enter your Site ID to continue:
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      marginTop: "20px",
+                      alignItems: "center",
                     }}
-                  />
-                  <button onClick={handleSetSiteId} className="retry-button">
-                    Set Site ID
-                  </button>
+                  >
+                    <input
+                      type="text"
+                      value={siteIdInput}
+                      onChange={(e) => setSiteIdInput(e.target.value)}
+                      placeholder="Enter Site ID"
+                      style={{
+                        padding: "10px",
+                        border: "1px solid #ddd",
+                        borderRadius: "6px",
+                        fontSize: "14px",
+                        flex: 1,
+                        maxWidth: "300px",
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === "Enter") {
+                          handleSetSiteId();
+                        }
+                      }}
+                    />
+                    <button onClick={handleSetSiteId} className="retry-button">
+                      Set Site ID
+                    </button>
+                  </div>
+                  <p
+                    style={{
+                      marginTop: "15px",
+                      fontSize: "12px",
+                      color: "#999",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Tip: You can also add VITE_SITE_ID to your .env file to set
+                    it permanently
+                  </p>
                 </div>
-                <p
-                  style={{
-                    marginTop: "15px",
-                    fontSize: "12px",
-                    color: "#999",
-                    fontStyle: "italic",
-                  }}
-                >
-                  Tip: You can also add VITE_SITE_ID to your .env file to set it
-                  permanently
-                </p>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -489,103 +643,101 @@ export function Dashboard() {
       import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 
     return (
-      <div className="dashboard-container">
-        <header className="dashboard-header">
-          <h1>Crowd Management Dashboard</h1>
-          <div className="header-actions">
-            <button onClick={handleLogout} className="logout-button">
-              Logout
-            </button>
-          </div>
-        </header>
-        <div className="error-container">
-          <div className="error-message-large">
-            <h2>⚠️ Connection Error</h2>
-            <p>{error}</p>
-            <div
-              style={{
-                marginTop: "20px",
-                padding: "15px",
-                background: "#f8f9fa",
-                borderRadius: "6px",
-              }}
-            >
-              <p style={{ margin: "0 0 10px 0", fontWeight: "600" }}>
-                Troubleshooting Steps:
-              </p>
-              <ol
+      <div className="dashboard-layout">
+        <Sidebar onLogout={handleLogout} />
+        <div className="dashboard-container">
+          <TopHeader />
+          <div className="error-container">
+            <div className="error-message-large">
+              <h2>⚠️ Connection Error</h2>
+              <p>{error}</p>
+              <div
                 style={{
-                  margin: "0",
-                  paddingLeft: "20px",
-                  fontSize: "14px",
-                  lineHeight: "1.8",
+                  marginTop: "20px",
+                  padding: "15px",
+                  background: "#f8f9fa",
+                  borderRadius: "6px",
                 }}
               >
-                <li>
-                  Check if API server is running at:{" "}
-                  <code
-                    style={{
-                      background: "#e9ecef",
-                      padding: "2px 6px",
-                      borderRadius: "3px",
-                    }}
-                  >
-                    {apiBaseUrl}
-                  </code>
-                </li>
-                <li>
-                  Verify your{" "}
-                  <code
-                    style={{
-                      background: "#e9ecef",
-                      padding: "2px 6px",
-                      borderRadius: "3px",
-                    }}
-                  >
-                    VITE_API_BASE_URL
-                  </code>{" "}
-                  in{" "}
-                  <code
-                    style={{
-                      background: "#e9ecef",
-                      padding: "2px 6px",
-                      borderRadius: "3px",
-                    }}
-                  >
-                    .env
-                  </code>{" "}
-                  file
-                </li>
-                <li>Check browser console (F12) for detailed error messages</li>
-                <li>Ensure you're connected to the internet</li>
-                <li>
-                  Try accessing the API directly in browser:{" "}
-                  <code
-                    style={{
-                      background: "#e9ecef",
-                      padding: "2px 6px",
-                      borderRadius: "3px",
-                    }}
-                  >
-                    {apiBaseUrl}/health
-                  </code>
-                </li>
-              </ol>
-            </div>
-            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-              <button onClick={loadDashboardData} className="retry-button">
-                Retry Now
-              </button>
-              <button
-                onClick={() => {
-                  setError(null);
-                  setLoading(false);
-                }}
-                className="retry-button"
-                style={{ background: "#666" }}
-              >
-                Continue Anyway
-              </button>
+                <p style={{ margin: "0 0 10px 0", fontWeight: "600" }}>
+                  Troubleshooting Steps:
+                </p>
+                <ol
+                  style={{
+                    margin: "0",
+                    paddingLeft: "20px",
+                    fontSize: "14px",
+                    lineHeight: "1.8",
+                  }}
+                >
+                  <li>
+                    Check if API server is running at:{" "}
+                    <code
+                      style={{
+                        background: "#e9ecef",
+                        padding: "2px 6px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      {apiBaseUrl}
+                    </code>
+                  </li>
+                  <li>
+                    Verify your{" "}
+                    <code
+                      style={{
+                        background: "#e9ecef",
+                        padding: "2px 6px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      VITE_API_BASE_URL
+                    </code>{" "}
+                    in{" "}
+                    <code
+                      style={{
+                        background: "#e9ecef",
+                        padding: "2px 6px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      .env
+                    </code>{" "}
+                    file
+                  </li>
+                  <li>
+                    Check browser console (F12) for detailed error messages
+                  </li>
+                  <li>Ensure you're connected to the internet</li>
+                  <li>
+                    Try accessing the API directly in browser:{" "}
+                    <code
+                      style={{
+                        background: "#e9ecef",
+                        padding: "2px 6px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      {apiBaseUrl}/health
+                    </code>
+                  </li>
+                </ol>
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                <button onClick={loadDashboardData} className="retry-button">
+                  Retry Now
+                </button>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setLoading(false);
+                  }}
+                  className="retry-button"
+                  style={{ background: "#666" }}
+                >
+                  Continue Anyway
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -594,55 +746,74 @@ export function Dashboard() {
   }
 
   return (
-    <div className="dashboard-container">
-      <header className="dashboard-header">
-        <h1>Crowd Management Dashboard</h1>
-        <div className="header-actions">
-          <button onClick={() => navigate("/entries")} className="nav-button">
-            View Entries
-          </button>
-          <button onClick={handleLogout} className="logout-button">
-            Logout
-          </button>
-        </div>
-      </header>
+    <div
+      className={`dashboard-layout ${
+        isSidebarCollapsed ? "sidebar-collapsed" : ""
+      }`}
+    >
+      <Sidebar
+        onLogout={handleLogout}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+      />
 
-      {alert && (
-        <AlertNotification alert={alert} onClose={() => setAlert(null)} />
-      )}
-
-      <div className="dashboard-content">
-        {/* Retry button for failed API calls */}
-        {failedCalls.length > 0 && (
-          <div className="partial-error-banner">
-            <span>
-              ⚠️ Failed to load: {failedCalls.join(", ")}. Showing available
-              data.
-            </span>
-            <button onClick={loadDashboardData} className="retry-link-button">
-              Retry
-            </button>
-          </div>
-        )}
-
-        <SummaryCards
-          liveOccupancy={liveOccupancy}
-          todayFootfall={todayFootfall}
-          avgDwellTime={avgDwellTime}
+      <AlertsPanel
+        alerts={allAlerts}
+        isOpen={showAlertsPanel}
+        onClose={() => {
+          setShowAlertsPanel(false);
+          showAlertsPanelRef.current = false;
+        }}
+      />
+      <div
+        className={
+          isSidebarCollapsed ? "dashboard-containercoll" : "dashboard-container"
+        }
+      >
+        <TopHeader
+          alertsCount={allAlerts.length}
+          onNotificationClick={() => {
+            setShowAlertsPanel(true);
+            showAlertsPanelRef.current = true;
+          }}
         />
-
-        <div className="charts-section">
-          <div className="chart-container chart-container-full">
-            <h2>Overall Occupancy</h2>
-            <OccupancyChart
-              data={occupancyData}
-              liveOccupancy={liveOccupancy}
-            />
+        <div className="dashboard-content">
+          <div className="dashboard-title-section">
+            <h1 className="dashboard-main-title">Overview</h1>
+            <h2 className="dashboard-subtitle">Occupancy</h2>
           </div>
+          {/* Retry button for failed API calls */}
+          {failedCalls.length > 0 && (
+            <div className="partial-error-banner">
+              <span>
+                ⚠️ Failed to load: {failedCalls.join(", ")}. Showing available
+                data.
+              </span>
+              <button onClick={loadDashboardData} className="retry-link-button">
+                Retry
+              </button>
+            </div>
+          )}
 
-          <div className="chart-container chart-container-full">
-            <h2>Demographics</h2>
-            <DemographicsChart data={demographicsData} />
+          <SummaryCards
+            liveOccupancy={liveOccupancy}
+            todayFootfall={todayFootfall}
+            avgDwellTime={avgDwellTime}
+          />
+
+          <div className="charts-section">
+            <div className="chart-container chart-container-full">
+              <h2>Overall Occupancy</h2>
+              <OccupancyChart
+                data={occupancyData}
+                liveOccupancy={liveOccupancy}
+              />
+            </div>
+
+            <div className="chart-container chart-container-full">
+              <h2 className="demographics-main-title">Demographics</h2>
+              <DemographicsChart data={demographicsData} />
+            </div>
           </div>
         </div>
       </div>

@@ -231,17 +231,49 @@ class AuthService {
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        console.error('AuthService: Login error details:', {
+          message: error.message,
+          code: error.code,
+          response: error.response?.status,
+          config: {
+            url: error.config?.url,
+            baseURL: error.config?.baseURL,
+            method: error.config?.method,
+          }
+        });
+
+        // Connection refused - server not running
         if (error.code === 'ECONNREFUSED' || error.message.includes('ERR_CONNECTION_REFUSED')) {
           throw new Error(
             `Cannot connect to backend server at ${API_BASE_URL}. Please ensure the backend is running and check your VITE_API_BASE_URL environment variable.`
           );
         }
+
+        // Network error - no response received
+        if (error.code === 'ERR_NETWORK' || error.message === 'Network Error' || !error.response) {
+          throw new Error(
+            `Network error: Cannot reach the backend server at ${API_BASE_URL}. Please check:\n` +
+            `1. Is the backend server running?\n` +
+            `2. Is the API URL correct in your .env file? (VITE_API_BASE_URL)\n` +
+            `3. Check browser console for CORS errors\n` +
+            `4. Try accessing the backend directly: ${API_BASE_URL}/auth/login`
+          );
+        }
+
+        // CORS error
+        if (error.message.includes('CORS') || error.code === 'ERR_CORS') {
+          throw new Error(
+            `CORS error: The backend server needs to allow requests from this origin. Please configure CORS on your backend server.`
+          );
+        }
+
         if (error.response) {
           // Server responded with error status
           throw new Error(error.response.data?.message || `Login failed: ${error.response.status} ${error.response.statusText}`);
         }
-        // Network error
-        throw new Error(error.message || 'Network error. Please check your connection.');
+
+        // Other network errors
+        throw new Error(`Network error: ${error.message || 'Please check your connection and ensure the backend server is running.'}`);
       }
       throw error;
     }
